@@ -1,0 +1,13 @@
+Windows Registry Editor Version 5.00
+
+; Disable Windows welcome / device setup prompts
+[HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\UserProfileEngagement]
+"ScoobeSystemSettingEnabled"=dword:00000000
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer]
+"NoStartupMenuSubFolders"=dword:00000001
+"NoWelcomeScreen"=dword:00000001
+
+; Disable consumer experience
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\CloudContent]
+"DisableWindowsConsumerFeatures"=dword:00000001
