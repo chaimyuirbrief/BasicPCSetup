@@ -1,11 +1,16 @@
 @echo off
 :: ============================================================================
 :: Install WMIC Files
-:: Downloads the WMIC / WBEM files from the official GitHub location and
-:: copies them into C:\Windows\System32\wbem
+:: Downloads the WMIC / WBEM files from the BasicPCSetup repo and copies them
+:: into C:\Windows\System32\wbem.
 ::
 :: WMIC was removed/deprecated in recent Windows 11 builds. This restores the
-:: files needed for WMIC and the WBEM tools to work again.
+:: files needed for WMIC and the WBEM tools to work again -- much faster than
+:: the official DISM Feature-on-Demand install.
+::
+:: The files in the repo are kept up to date by Publish-WMIC-Files.ps1, which
+:: runs on a machine that still has WMIC and receives Windows Updates, so the
+:: files installed here stay current without any manual copying.
 :: ============================================================================
 
 :: Check if the script is running with administrative privileges
