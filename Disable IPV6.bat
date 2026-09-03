@@ -23,14 +23,37 @@ title Disable IPv6 - All Network Adapters
 :: not part of the adapter list and do not expose this binding.
 :: ============================================================================
 
-:: Check if the script is running with administrative privileges
-net session >nul 2>&1
+:: Check if the script is running with administrative privileges.
+:: fltmc is used instead of "net session": net session queries the Server
+:: (LanmanServer) service and fails with error 2 when that service is stopped,
+:: which reports even a full administrator as non-elevated. fltmc has no
+:: service dependency. The result is tested with "neq 0" rather than
+:: "if errorlevel 1" because fltmc returns a negative value (0x80070005) when
+:: access is denied, which "if errorlevel 1" would read as success.
+fltmc >nul 2>&1
 if %errorlevel% neq 0 goto :elevate
 goto :main
 
 :elevate
+:: One-shot guard. The relaunch below passes /elevated, so if the privilege
+:: probe still fails in the elevated child we say so instead of relaunching
+:: again. Requesting RunAs from an already-elevated process shows no UAC
+:: prompt, so without this guard a probe that is wrong about our privileges
+:: would open console windows endlessly with nothing to stop it.
+if /i "%~1"=="/elevated" (
+    echo.
+    echo Administrator rights could not be confirmed even after elevation.
+    echo Right-click this file and choose Run as administrator.
+    echo.
+    pause
+    exit /b 1
+)
 echo This script requires administrative privileges. Requesting elevation...
-powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Start-Process -FilePath '%~f0' -Verb RunAs } catch { exit 1 }"
+:: The path is handed over in an environment variable rather than pasted into
+:: the PowerShell text: a path such as C:\Users\O'Brien\Disable IPV6.bat would
+:: otherwise close the quoted string early and make the command unparseable.
+set "SELF=%~f0"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Start-Process -FilePath $env:SELF -ArgumentList '/elevated' -Verb RunAs -ErrorAction Stop } catch { exit 1 }"
 if errorlevel 1 (
     echo.
     echo Elevation was cancelled or failed.
