@@ -18,12 +18,52 @@ rem  will land in that admin's profile instead.
 rem ============================================================
 
 rem ---- Self-elevate if not already running as admin ----
-net session >nul 2>&1
-if %errorlevel% neq 0 (
-    echo Requesting administrator privileges...
-    powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
-    exit /b
+rem fltmc is used instead of "net session": net session queries the Server
+rem (LanmanServer) service and fails with error 2 when that service is stopped
+rem or disabled, which reports even a full administrator as non-elevated. The
+rem script would then relaunch itself with RunAs -- and because RunAs from an
+rem already-elevated process shows no UAC prompt, the child would fail the same
+rem probe and relaunch again, without bound: an endless chain of console
+rem windows, no diagnostic, and nothing configured. fltmc has no service
+rem dependency. The result is tested with "neq 0" rather than "if errorlevel 1"
+rem because fltmc returns a negative value (0x80070005) when access is denied,
+rem which "if errorlevel 1" would read as success.
+fltmc >nul 2>&1
+if %errorlevel% neq 0 goto :elevate
+goto :main
+
+:elevate
+rem One-shot guard. The relaunch below passes /elevated, so if the privilege
+rem probe still fails in the elevated child we say so instead of relaunching
+rem again.
+if /i "%~1"=="/elevated" (
+    echo.
+    echo Administrator rights could not be confirmed even after elevation.
+    echo Right-click this file and choose Run as administrator.
+    echo.
+    pause
+    exit /b 1
 )
+echo Requesting administrator privileges...
+rem The path is handed over in an environment variable rather than pasted into
+rem the PowerShell text: a path such as C:\Users\O'Brien\Configure-Windows11.bat
+rem would otherwise close the quoted string early and leave the -Command text
+rem unparseable, so PowerShell would exit before Start-Process ever ran.
+set "SELF=%~f0"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Start-Process -FilePath $env:SELF -ArgumentList '/elevated' -Verb RunAs -ErrorAction Stop } catch { exit 1 }"
+rem -ErrorAction Stop makes a dismissed UAC prompt reach the catch; without a
+rem check here the original script exited silently and the user was left with
+rem no idea why nothing had been configured.
+if errorlevel 1 (
+    echo.
+    echo Elevation was cancelled or failed.
+    echo Right-click this file and choose Run as administrator.
+    echo.
+    pause
+)
+exit /b
+
+:main
 
 echo.
 echo ==== Detecting form factor (desktop vs laptop) ====
