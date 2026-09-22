@@ -50,7 +50,15 @@ rem the PowerShell text: a path such as C:\Users\O'Brien\Configure-Windows11.bat
 rem would otherwise close the quoted string early and leave the -Command text
 rem unparseable, so PowerShell would exit before Start-Process ever ran.
 set "SELF=%~f0"
-powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Start-Process -FilePath $env:SELF -ArgumentList '/elevated' -Verb RunAs -ErrorAction Stop } catch { exit 1 }"
+rem A mapped drive letter belongs to the logon session that created it. UAC
+rem hands the elevated child a different session, so Z: does not exist there:
+rem the child would start, fail to find this file, and close before anyone
+rem could read the error -- and the parent would not notice, because
+rem Start-Process succeeded (it launched cmd.exe; cmd.exe is what failed).
+rem Rewriting the drive letter to its UNC root gives the child a path its own
+rem token can resolve. DisplayRoot is populated only for network drives, so a
+rem local path falls through untouched.
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$p=$env:SELF; if ($p -match '^([A-Za-z]):') { $d=Get-PSDrive -Name $matches[1] -ErrorAction SilentlyContinue; if ($d.DisplayRoot) { $p=$d.DisplayRoot + $p.Substring(2) } }; try { Start-Process -FilePath $p -ArgumentList '/elevated' -Verb RunAs -ErrorAction Stop } catch { exit 1 }"
 rem -ErrorAction Stop makes a dismissed UAC prompt reach the catch; without a
 rem check here the original script exited silently and the user was left with
 rem no idea why nothing had been configured.

@@ -53,7 +53,15 @@ echo This script requires administrative privileges. Requesting elevation...
 :: the PowerShell text: a path such as C:\Users\O'Brien\Disable IPV6.bat would
 :: otherwise close the quoted string early and make the command unparseable.
 set "SELF=%~f0"
-powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Start-Process -FilePath $env:SELF -ArgumentList '/elevated' -Verb RunAs -ErrorAction Stop } catch { exit 1 }"
+:: A mapped drive letter belongs to the logon session that created it. UAC
+:: hands the elevated child a different session, so Z: does not exist there:
+:: the child would start, fail to find this file, and close before anyone
+:: could read the error -- and the parent would not notice, because
+:: Start-Process succeeded (it launched cmd.exe; cmd.exe is what failed).
+:: Rewriting the drive letter to its UNC root gives the child a path its own
+:: token can resolve. DisplayRoot is populated only for network drives, so a
+:: local path falls through untouched.
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$p=$env:SELF; if ($p -match '^([A-Za-z]):') { $d=Get-PSDrive -Name $matches[1] -ErrorAction SilentlyContinue; if ($d.DisplayRoot) { $p=$d.DisplayRoot + $p.Substring(2) } }; try { Start-Process -FilePath $p -ArgumentList '/elevated' -Verb RunAs -ErrorAction Stop } catch { exit 1 }"
 if errorlevel 1 (
     echo.
     echo Elevation was cancelled or failed.
