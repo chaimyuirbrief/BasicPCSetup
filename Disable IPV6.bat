@@ -77,7 +77,7 @@ echo This script requires administrative privileges. Requesting elevation...
 :: The path is handed over in an environment variable rather than pasted into
 :: the PowerShell text: a path such as C:\Users\O'Brien\Disable IPV6.bat would
 :: otherwise close the quoted string early and make the command unparseable.
-set "SELF=%~f0"
+call :selfpath
 :: A mapped drive letter belongs to the logon session that created it. UAC
 :: hands the elevated child a different session, so Z: does not exist there:
 :: the child would start, fail to find this file, and close before anyone
@@ -86,7 +86,16 @@ set "SELF=%~f0"
 :: Rewriting the drive letter to its UNC root gives the child a path its own
 :: token can resolve. DisplayRoot is populated only for network drives, so a
 :: local path falls through untouched.
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$p=$env:SELF; if ($p -match '^([A-Za-z]):') { $d=Get-PSDrive -Name $matches[1] -ErrorAction SilentlyContinue; if ($d.DisplayRoot) { $p=$d.DisplayRoot + $p.Substring(2) } }; try { Start-Process -FilePath $p -ArgumentList '/elevated' -Verb RunAs -ErrorAction Stop } catch { exit 1 }"
+:: The child is cmd.exe itself, started as: cmd.exe /d /c ""<this file>" /elevated"
+:: Handing the .bat straight to RunAs would run Windows' own command for it,
+:: cmd.exe /C followed by the quoted path. When the path contains any of
+:: & ( ) or @ -- "Disable IPV6 (1).bat", the name a browser gives a second
+:: download, is enough -- cmd /C removes those quotes, splits the path at its
+:: first space, and the elevated window closes at once without saying why.
+:: The outer pair of quotes above is the pair cmd removes, so the path keeps
+:: its own. [char]34 builds the quotes so that none has to appear inside the
+:: double-quoted -Command text below.
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$p=$env:SELF; if ($p -match '^([A-Za-z]):') { $d=Get-PSDrive -Name $matches[1] -ErrorAction SilentlyContinue; if ($d.DisplayRoot) { $p=$d.DisplayRoot + $p.Substring(2) } }; $q=[char]34; try { Start-Process -FilePath $env:ComSpec -ArgumentList ('/d /c ' + $q + $q + $p + $q + ' /elevated' + $q) -Verb RunAs -ErrorAction Stop } catch { exit 1 }"
 if errorlevel 1 (
     echo.
     echo Elevation was cancelled or failed.
@@ -99,16 +108,30 @@ exit /b
 :main
 :: Run the PowerShell section at the bottom of this file: PowerShell reads the
 :: whole file and runs it, and the block comment opened on line 1 hides this
-:: batch section from it. The path travels in an environment variable for the
-:: same quoting reason as SELF above. The variable also tells the PowerShell
-:: section that it was started from here, which is what allows it to report
-:: its result through exit (see the notes at the top of that section).
-set "DISABLE_IPV6_BAT=%~f0"
-powershell -NoProfile -ExecutionPolicy Bypass -Command "iex ([IO.File]::ReadAllText($env:DISABLE_IPV6_BAT))"
+:: batch section from it. The file is read with Get-Content, not a .NET call
+:: such as [IO.File]::ReadAllText: PowerShell's Constrained Language mode
+:: (AppLocker or WDAC script enforcement) refuses .NET method calls, which
+:: would stop the script before it started. The path travels in an
+:: environment variable for the same quoting reason as SELF above. The
+:: variable also tells the PowerShell section that it was started from here,
+:: which is what allows it to report its result through exit (see the notes
+:: at the top of that section).
+call :selfpath
+set "DISABLE_IPV6_BAT=%SELF%"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "iex ((Get-Content -LiteralPath $env:DISABLE_IPV6_BAT) -join [char]10)"
 set "RC=%errorlevel%"
 echo.
 pause
 endlocal & exit /b %RC%
+
+:selfpath
+:: Sets SELF to the full path of this file. It is a CALLed label on purpose:
+:: at the top level cmd rebuilds that path from the name the file was started
+:: with, so starting it as "Disable IPV6" (quoted, no extension) or through
+:: PATH from another folder yields a path that does not exist. Inside a
+:: CALLed label cmd uses the file it actually opened. Reached only by CALL.
+set "SELF=%~f0"
+exit /b
 #>
 # ============================================================================
 # PowerShell section -- the part that actually changes the adapters.
@@ -134,8 +157,16 @@ endlocal & exit /b %RC%
         Write-Host ''
 
         if (-not $fromBatch) {
-            $principal = New-Object Security.Principal.WindowsPrincipal ([Security.Principal.WindowsIdentity]::GetCurrent())
-            if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+            # The same fltmc probe the batch section uses, for the same
+            # reasons. It is also one of the few checks that still works in
+            # Constrained Language mode, which refuses the .NET
+            # WindowsPrincipal check. If the caller's session has
+            # $ErrorActionPreference set to Stop, Windows PowerShell can turn
+            # fltmc's access-denied message into an exception; the catch
+            # counts that as not elevated too.
+            $elevated = $false
+            try { $null = fltmc.exe 2>&1; $elevated = ($LASTEXITCODE -eq 0) } catch { }
+            if (-not $elevated) {
                 Write-Host 'ERROR: This needs an elevated PowerShell window.' -ForegroundColor Red
                 Write-Host 'Right-click Start, choose Terminal (Admin) or Windows PowerShell (Admin),'
                 Write-Host 'and run the same command again there.'
