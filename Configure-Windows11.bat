@@ -7,8 +7,9 @@ rem  Applies: taskbar (left align, no widgets, End task),
 rem  date/time (auto tz, auto time, tray clock, seconds,
 rem  Israel additional clock, notification-center clock,
 rem  NTP server time.nist.gov + sync), clipboard history,
-rem  and adds Hebrew language with all optional FoD features
-rem  (without changing the display language).
+rem  lock screen off (machine-wide), and adds Hebrew language
+rem  with all optional FoD features (without changing the
+rem  display language).
 rem
 rem  NOTE: HKCU writes apply to whatever user runs this script.
 rem  Run it as the signed-in user with an account that has
@@ -138,6 +139,17 @@ echo ==== Clipboard history ====
 reg add "HKCU\Software\Microsoft\Clipboard" /v EnableClipboardHistory /t REG_DWORD /d 1 /f
 
 echo.
+echo ==== Lock screen off - straight to the sign-in box ====
+rem The same value the Group Policy "Do not display the lock screen" writes,
+rem found under Computer Configuration > Administrative Templates > Control
+rem Panel > Personalization. Writing it directly makes it work on Home too,
+rem which has no gpedit.msc.
+rem Machine-wide: every account on the PC gets it, not just this one. It has
+rem no effect on an account that is required to press Ctrl+Alt+Del to sign in.
+rem Undo: reg delete "HKLM\SOFTWARE\Policies\Microsoft\Windows\Personalization" /v NoLockScreen /f
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\Personalization" /v NoLockScreen /t REG_DWORD /d 1 /f
+
+echo.
 echo ==== Add Hebrew language + all optional features (Language pack,
 echo      Text-to-speech, Handwriting + required Basic typing/fonts) ====
 echo (Downloads language pack + Feature-on-Demand packages; may take a while.)
@@ -166,6 +178,9 @@ echo    access for Feature-on-Demand. Any unavailable feature
 echo    (e.g. Hebrew speech recognition) is simply skipped.
 echo  - A sign-out/in or reboot is recommended for the language and
 echo    notification-center clock to fully settle.
+echo  - The lock screen is now off for EVERY account on this PC.
+echo    To bring it back, delete the NoLockScreen value under
+echo    HKLM\SOFTWARE\Policies\Microsoft\Windows\Personalization
 echo ============================================================
 echo.
 pause
