@@ -88,6 +88,13 @@ rem Disable Widgets (0 = off)
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v TaskbarDa /t REG_DWORD /d 0 /f
 rem Enable "End task" in taskbar right-click (System > For developers)
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced\TaskbarDeveloperSettings" /v TaskbarEndTask /t REG_DWORD /d 1 /f
+rem "Show smaller taskbar buttons" (Taskbar behaviors): 0 = Always,
+rem 1 = Never, 2 = When taskbar is full (the default)
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v IconSizePreference /t REG_DWORD /d 1 /f
+rem "Emoji and more" tray icon (System tray icons): 0 = Never,
+rem 1 = While typing (the default), 2 = Always. Builds without the option
+rem simply ignore the value.
+reg add "HKCU\Software\Microsoft\TabletTip\1.7" /v EmojiAndMoreIconVisibilityState /t REG_DWORD /d 2 /f
 
 echo.
 echo ==== System tray clock ====
@@ -139,6 +146,15 @@ echo ==== Clipboard history ====
 reg add "HKCU\Software\Microsoft\Clipboard" /v EnableClipboardHistory /t REG_DWORD /d 1 /f
 
 echo.
+echo ==== Disable IPv6 on every network adapter ====
+rem Same approach as "Disable IPV6.bat", which stays in this repo for running
+rem on its own: every adapter that exposes the IPv6 binding, found at run time
+rem (physical, Wi-Fi, Bluetooth, VPN, Hyper-V, dock - including ones that are
+rem down). Clears the per-adapter checkbox only; the machine-wide
+rem DisabledComponents value is left alone.
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$b = @(Get-NetAdapterBinding -ComponentID ms_tcpip6 -ErrorAction SilentlyContinue | Sort-Object Name); if (-not $b) { Write-Host ' - no adapter exposes an IPv6 binding' }; foreach ($x in $b) { if (-not $x.Enabled) { Write-Host (' [ SKIP ] ' + $x.Name + ' - already off'); continue }; try { $x | Disable-NetAdapterBinding -ErrorAction Stop; Write-Host (' [  OK  ] ' + $x.Name) } catch { Write-Host (' [ FAIL ] ' + $x.Name + ' - ' + $_.Exception.Message) } }"
+
+echo.
 echo ==== Lock screen off - straight to the sign-in box ====
 rem The same value the Group Policy "Do not display the lock screen" writes,
 rem found under Computer Configuration > Administrative Templates > Control
@@ -152,14 +168,19 @@ reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\Personalization" /v NoLockScre
 echo.
 echo ==== Add Hebrew language + all optional features (Language pack,
 echo      Text-to-speech, Handwriting + required Basic typing/fonts) ====
-echo (Downloads language pack + Feature-on-Demand packages; may take a while.)
+echo (Opens in its own window and runs alongside the rest of this script -
+echo  the downloads take a while. Leave that window open until it says done.)
 echo (Display / Windows UI language is NOT changed - no -CopyToSettings used.)
 rem Install-Language (no -CopyToSettings) = installs the pack + all available
 rem FoD features for he-IL WITHOUT setting it as the display language.
 rem Falls back to DISM capabilities if the LanguagePackManagement module
 rem isn't present (older builds). Then add to the preferred-language list so
 rem it shows up with its keyboard, like the GUI "Add a language" flow.
-powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Install-Language he-IL -ErrorAction Stop } catch { Write-Host 'Install-Language unavailable; falling back to DISM capabilities'; $caps = Get-WindowsCapability -Online; foreach($c in $caps){ if($c.State -ne 'Installed' -and ($c.Name -like 'Language.*~he-IL~*' -or $c.Name -like '*und-HEBR*')){ Write-Host (' - ' + $c.Name); Add-WindowsCapability -Online -Name $c.Name -ErrorAction SilentlyContinue } } }; $l = Get-WinUserLanguageList; if (-not ($l.LanguageTag -contains 'he-IL')) { $l.Add('he-IL') }; Set-WinUserLanguageList $l -Force"
+rem START hands it to a new window and returns at once, so the slow downloads
+rem no longer hold up the rest of the setup. The new window inherits this
+rem one's elevation and user, so the language list still lands in the right
+rem profile. -NoExit keeps it open to show the result.
+start "Hebrew language install" powershell -NoProfile -ExecutionPolicy Bypass -NoExit -Command "try { Install-Language he-IL -ErrorAction Stop } catch { Write-Host 'Install-Language unavailable; falling back to DISM capabilities'; $caps = Get-WindowsCapability -Online; foreach($c in $caps){ if($c.State -ne 'Installed' -and ($c.Name -like 'Language.*~he-IL~*' -or $c.Name -like '*und-HEBR*')){ Write-Host (' - ' + $c.Name); Add-WindowsCapability -Online -Name $c.Name -ErrorAction SilentlyContinue } } }; $l = Get-WinUserLanguageList; if (-not ($l.LanguageTag -contains 'he-IL')) { $l.Add('he-IL') }; Set-WinUserLanguageList $l -Force; Write-Host ''; Write-Host 'Hebrew language install finished - you can close this window.' -ForegroundColor Green"
 
 echo.
 echo ==== Restarting Explorer to apply taskbar/clock changes ====
@@ -173,6 +194,10 @@ echo  - Auto time zone also needs Location ON; this script enabled
 echo    the Location service + global consent. If a per-app/Group
 echo    Policy blocks location, the auto-tz toggle may still show
 echo    off until that is cleared.
+echo  - Hebrew is still installing in its own window - let it finish
+echo    before you reboot or sign out.
+echo  - IPv6 is now off on every adapter. Re-tick it per adapter in
+echo    Network Connections if a VPN or virtual switch needs it.
 echo  - Hebrew optional features depend on Windows Update / internet
 echo    access for Feature-on-Demand. Any unavailable feature
 echo    (e.g. Hebrew speech recognition) is simply skipped.
